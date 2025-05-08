@@ -91,10 +91,25 @@ const ChatInterface = () => {
       handleSubmit(e);
     }
   };
+  
+  const handleClearHistory = () => {
+    setMessages([
+      {
+        role: "assistant",
+        content: "Chat history cleared. I'm still connected and ready to help with medications, interactions, or medical data!",
+        timestamp: new Date(),
+      },
+    ]);
+    
+    toast({
+      title: "Chat Cleared",
+      description: "All messages have been cleared while maintaining connection.",
+    });
+  };
 
   return (
     <div className="flex flex-col h-screen bg-chat-bg">
-      <ChatHeader />
+      <ChatHeader onClearHistory={handleClearHistory} />
       <div className="flex-grow overflow-auto p-4">
         <div className="max-w-4xl mx-auto">
           {messages.map((message, index) => (

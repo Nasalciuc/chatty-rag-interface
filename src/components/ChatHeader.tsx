@@ -1,15 +1,30 @@
 
-import { Database } from "lucide-react";
+import { Pill } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-const ChatHeader = () => {
+interface ChatHeaderProps {
+  onClearHistory: () => void;
+}
+
+const ChatHeader = ({ onClearHistory }: ChatHeaderProps) => {
   return (
     <div className="border-b border-chat-border bg-white p-4">
       <div className="max-w-4xl mx-auto flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <Database className="h-6 w-6 text-chat-highlight" />
-          <h1 className="text-xl font-semibold">Knowledge Graph Assistant</h1>
+          <Pill className="h-6 w-6 text-chat-highlight" />
+          <h1 className="text-xl font-semibold">Medilexa</h1>
         </div>
-        <div className="text-sm text-gray-500">Connected to Neo4j</div>
+        <div className="flex items-center gap-4">
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={onClearHistory}
+            className="text-gray-600 hover:text-gray-800"
+          >
+            Clear Chat
+          </Button>
+          <div className="text-sm text-gray-500">Connected to Neo4j</div>
+        </div>
       </div>
     </div>
   );
