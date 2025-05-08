@@ -1,0 +1,12 @@
+
+# Add this import at the top of your file
+from fastapi.middleware.cors import CORSMiddleware
+
+# Add this right after your FastAPI app initialization (after app = FastAPI(...))
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with your frontend's domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
