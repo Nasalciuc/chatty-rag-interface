@@ -1,7 +1,7 @@
 
 import { Message } from "@/types/chat";
 
-const API_URL = "https://90f0-188-208-123-46.ngrok-free.app";
+const API_URL = "https://6c8a-93-117-148-210.ngrok-free.app";
 
 export const sendMessage = async (message: string): Promise<{ 
   answer: string; 
