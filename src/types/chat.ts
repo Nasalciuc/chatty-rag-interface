@@ -4,7 +4,7 @@ export interface Message {
   content: string;
   timestamp: Date;
   metadata?: {
-    cypher_query?: string;
-    raw_data?: string[];
+    sources?: string[];
+    token_usage?: number;
   };
 }

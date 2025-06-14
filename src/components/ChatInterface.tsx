@@ -7,18 +7,19 @@ import { Textarea } from "@/components/ui/textarea";
 import ChatMessage from "./ChatMessage";
 import ChatHeader from "./ChatHeader";
 import { Message } from "@/types/chat";
-import { sendMessage } from "@/services/chatService";
+import { sendMessage, testConnection } from "@/services/chatService";
 
 const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: "Hello! I'm your medical AI assistant. Currently, I'm using language model and web search to answer your medical questions. The local medical database (RAG) is not active at the moment. For detailed answers, please ensure your questions are clear and specific. The information provided does not replace specialized medical consultation.",
+      content: "Bună! Sunt asistentul tău medical AI. Folosesc baza de date medicală locală (RAG) și căutare web pentru a răspunde la întrebările tale medicale. Pentru răspunsuri detaliate, asigură-te că întrebarea ta este clară și specifică. Informațiile oferite nu înlocuiesc consultul medical de specialitate.",
       timestamp: new Date(),
     },
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<string>("checking");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -30,7 +31,18 @@ const ChatInterface = () => {
     if (inputRef.current) {
       inputRef.current.focus();
     }
+    checkConnection();
   }, []);
+
+  const checkConnection = async () => {
+    try {
+      const status = await testConnection();
+      setConnectionStatus(status.assistant_ready ? "connected" : "limited");
+    } catch (error) {
+      setConnectionStatus("disconnected");
+      console.error("Connection check failed:", error);
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -58,8 +70,8 @@ const ChatInterface = () => {
         content: data.answer,
         timestamp: new Date(),
         metadata: {
-          cypher_query: data.cypher_query,
-          raw_data: data.raw_data
+          sources: data.sources,
+          token_usage: data.token_usage
         }
       };
 
@@ -67,8 +79,8 @@ const ChatInterface = () => {
     } catch (error) {
       console.error("Failed to fetch response:", error);
       toast({
-        title: "Error",
-        description: "Failed to connect to the server. Please try again later.",
+        title: "Eroare",
+        description: "Nu s-a putut conecta la server. Încearcă din nou mai târziu.",
         variant: "destructive",
       });
       
@@ -76,7 +88,7 @@ const ChatInterface = () => {
         ...prev,
         {
           role: "assistant",
-          content: "I'm sorry, I encountered an error while processing your request. Please try again later.",
+          content: "Îmi pare rău, am întâmpinat o eroare în procesarea cererii tale. Te rog să încerci din nou mai târziu.",
           timestamp: new Date(),
         },
       ]);
@@ -96,28 +108,58 @@ const ChatInterface = () => {
     setMessages([
       {
         role: "assistant",
-        content: "Chat history cleared. I'm still connected and ready to help with medical questions using LLM and web search!",
+        content: "Istoricul conversației a fost șters. Sunt încă conectat și gata să ajut cu întrebări medicale folosind RAG și căutare web!",
         timestamp: new Date(),
       },
     ]);
     
     toast({
-      title: "Chat Cleared",
-      description: "All messages have been cleared while maintaining connection.",
+      title: "Chat șters",
+      description: "Toate mesajele au fost șterse menținând conexiunea.",
     });
+  };
+
+  const getStatusMessage = () => {
+    switch (connectionStatus) {
+      case "connected":
+        return "RAG + Căutare Web Activ";
+      case "limited":
+        return "Doar LLM + Căutare Web";
+      case "disconnected":
+        return "Deconectat";
+      default:
+        return "Se verifică conexiunea...";
+    }
+  };
+
+  const getStatusColor = () => {
+    switch (connectionStatus) {
+      case "connected":
+        return "text-green-600";
+      case "limited":
+        return "text-yellow-600";
+      case "disconnected":
+        return "text-red-600";
+      default:
+        return "text-gray-600";
+    }
   };
 
   return (
     <div className="flex flex-col h-screen bg-chat-bg">
-      <ChatHeader onClearHistory={handleClearHistory} />
+      <ChatHeader onClearHistory={handleClearHistory} status={getStatusMessage()} />
       
-      {/* Disclaimer Banner */}
-      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mx-4 mt-2 rounded-r-lg">
+      {/* Status Banner */}
+      <div className={`${connectionStatus === 'disconnected' ? 'bg-red-50 border-red-400' : connectionStatus === 'limited' ? 'bg-yellow-50 border-yellow-400' : 'bg-green-50 border-green-400'} border-l-4 p-4 mx-4 mt-2 rounded-r-lg`}>
         <div className="flex items-center max-w-4xl mx-auto">
-          <AlertCircle className="h-5 w-5 text-yellow-600 mr-2 flex-shrink-0" />
-          <div className="text-sm text-yellow-800">
-            <strong>Note:</strong> This AI assistant uses language model and web search only. 
-            The local medical database (RAG) is currently not active. Information provided does not replace professional medical consultation.
+          <AlertCircle className={`h-5 w-5 ${getStatusColor()} mr-2 flex-shrink-0`} />
+          <div className={`text-sm ${getStatusColor().replace('text-', 'text-').replace('-600', '-800')}`}>
+            <strong>Status:</strong> {getStatusMessage()}. 
+            {connectionStatus === 'disconnected' && " Verifică dacă serverul backend rulează pe localhost:8000."}
+            {connectionStatus === 'limited' && " Baza de date medicală locală nu este disponibilă."}
+            {connectionStatus === 'connected' && " Toate funcționalitățile sunt active."}
+            <br />
+            <em>Informațiile oferite nu înlocuiesc consultul medical profesional.</em>
           </div>
         </div>
       </div>
@@ -156,7 +198,7 @@ const ChatInterface = () => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask a medical question (using LLM + web search)..."
+              placeholder="Întreabă despre medicamente, tratamente sau informații medicale..."
               className="min-h-12 flex-grow resize-none border-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
               rows={1}
             />

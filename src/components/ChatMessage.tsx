@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Message } from "@/types/chat";
 import { Button } from "@/components/ui/button";
-import { Code } from "lucide-react";
+import { Info } from "lucide-react";
 
 interface ChatMessageProps {
   message: Message;
@@ -11,13 +11,13 @@ interface ChatMessageProps {
 const ChatMessage = ({ message }: ChatMessageProps) => {
   const [showMetadata, setShowMetadata] = useState(false);
 
-  const formattedTime = new Intl.DateTimeFormat("en-US", {
+  const formattedTime = new Intl.DateTimeFormat("ro-RO", {
     hour: "numeric",
     minute: "numeric",
   }).format(new Date(message.timestamp));
 
   const isUser = message.role === "user";
-  const hasMetadata = message.metadata && (message.metadata.cypher_query || (message.metadata.raw_data && message.metadata.raw_data.length > 0));
+  const hasMetadata = message.metadata && (message.metadata.sources || message.metadata.token_usage);
 
   return (
     <div
@@ -34,7 +34,7 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
       >
         <div className="flex items-center gap-2 mb-1">
           <span className="font-medium">
-            {isUser ? "You" : "Assistant"}
+            {isUser ? "Tu" : "Asistent"}
           </span>
           <span className="text-xs opacity-70">{formattedTime}</span>
         </div>
@@ -51,30 +51,28 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
               }`}
               onClick={() => setShowMetadata(!showMetadata)}
             >
-              <Code className="h-4 w-4" />
-              <span>{showMetadata ? "Hide details" : "Show details"}</span>
+              <Info className="h-4 w-4" />
+              <span>{showMetadata ? "Ascunde detalii" : "Arată detalii"}</span>
             </Button>
 
             {showMetadata && (
               <div className={`mt-2 p-2 rounded ${isUser ? "bg-purple-700" : "bg-gray-200"}`}>
-                {message.metadata.cypher_query && (
+                {message.metadata.sources && (
                   <div className="mb-2">
-                    <p className="font-medium mb-1">Cypher Query:</p>
-                    <pre className="text-xs overflow-x-auto p-2 bg-gray-800 text-gray-200 rounded">
-                      {message.metadata.cypher_query}
-                    </pre>
+                    <p className="font-medium mb-1">Surse:</p>
+                    <div className="flex gap-2">
+                      {message.metadata.sources.map((source, index) => (
+                        <span key={index} className="text-xs px-2 py-1 bg-gray-600 text-white rounded">
+                          {source}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
-                {message.metadata.raw_data && message.metadata.raw_data.length > 0 && (
+                {message.metadata.token_usage && (
                   <div>
-                    <p className="font-medium mb-1">Data Sources:</p>
-                    <ul className="list-disc pl-5">
-                      {message.metadata.raw_data.map((item, index) => (
-                        <li key={index} className="text-xs">
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
+                    <p className="font-medium mb-1">Token-uri utilizate:</p>
+                    <span className="text-xs">{message.metadata.token_usage}</span>
                   </div>
                 )}
               </div>
