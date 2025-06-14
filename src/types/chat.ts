@@ -1,4 +1,5 @@
 
+import { ChatMode } from "@/types/chat";
 export interface ThinkingStep {
   type: 'reasoning' | 'action' | 'result' | 'conclusion';
   content: string;
@@ -20,6 +21,7 @@ export interface Message {
     };
     search_type?: 'standard' | 'neo4j' | 'parallel';
     thinking_process?: ThinkingStep[];
+    mode?: ChatMode;
   };
 }
 
@@ -33,6 +35,7 @@ export interface AdvancedMessageOptions {
   useParallelSearch?: boolean;
   includeThinking?: boolean;
   mode?: ChatMode;
+  systemPrompt?: string;
 }
 
 export type ChatMode = 'ask' | 'edit' | 'agent';
