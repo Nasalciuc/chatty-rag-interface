@@ -1,11 +1,12 @@
 
-import { ChatMode } from "@/types/chat";
 export interface ThinkingStep {
   type: 'reasoning' | 'action' | 'result' | 'conclusion';
   content: string;
   tool?: string;
   timestamp: number;
 }
+
+export type ChatMode = 'ask' | 'edit' | 'agent';
 
 export interface Message {
   role: "user" | "assistant" | "system";
@@ -37,8 +38,6 @@ export interface AdvancedMessageOptions {
   mode?: ChatMode;
   systemPrompt?: string;
 }
-
-export type ChatMode = 'ask' | 'edit' | 'agent';
 
 export interface ChatModeConfig {
   id: ChatMode;
