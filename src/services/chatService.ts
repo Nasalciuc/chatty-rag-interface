@@ -1,6 +1,5 @@
-
 import { supabase } from "@/integrations/supabase/client";
-import { Message } from "@/types/chat";
+import { Message, ChatMode } from "@/types/chat";
 
 export interface AdvancedMessageOptions {
   useNeo4j?: boolean;
@@ -137,4 +136,36 @@ export const formatThinkingProcess = (steps: ThinkingStep[]): string => {
   });
 
   return formatted;
+};
+
+export const sendMessageWithMode = async (
+  message: string,
+  mode: ChatMode,
+  options: AdvancedMessageOptions = {}
+): Promise<AdvancedResponse> => {
+  const modeConfig = {
+    ask: {
+      useParallelSearch: false,
+      includeThinking: false,
+      systemPrompt: "Răspunde direct la întrebarea medicală folosind informații precise și actualizate."
+    },
+    edit: {
+      useParallelSearch: true,
+      includeThinking: true,
+      systemPrompt: "Analizează și îmbunătățește informațiile medicale oferite, oferind sugestii de editare și completări."
+    },
+    agent: {
+      useParallelSearch: true,
+      includeThinking: true,
+      systemPrompt: "Funcționează ca un agent medical avansat cu capacități de gândire și analiză detaliată."
+    }
+  };
+
+  const config = modeConfig[mode];
+  
+  return sendMessage(message, {
+    ...options,
+    ...config,
+    mode
+  });
 };

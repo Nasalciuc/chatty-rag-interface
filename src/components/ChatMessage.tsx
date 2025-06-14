@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Message } from "@/types/chat";
 import { Button } from "@/components/ui/button";
-import { Info, Brain, ChevronDown, ChevronUp } from "lucide-react";
+import { Info, Brain, ChevronDown, ChevronUp, MessageCircle, Edit3, Bot } from "lucide-react";
 import { formatThinkingProcess } from "@/services/chatService";
 
 interface ChatMessageProps {
@@ -21,6 +21,33 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
   const isUser = message.role === "user";
   const hasMetadata = message.metadata && (message.metadata.sources || message.metadata.token_usage);
   const hasThinking = message.metadata?.thinking_process && message.metadata.thinking_process.length > 0;
+  const messageMode = message.metadata?.mode;
+
+  const getModeIcon = (mode: string) => {
+    switch (mode) {
+      case 'ask':
+        return <MessageCircle className="h-3 w-3" />;
+      case 'edit':
+        return <Edit3 className="h-3 w-3" />;
+      case 'agent':
+        return <Bot className="h-3 w-3" />;
+      default:
+        return null;
+    }
+  };
+
+  const getModeLabel = (mode: string) => {
+    switch (mode) {
+      case 'ask':
+        return 'ASK';
+      case 'edit':
+        return 'EDIT';
+      case 'agent':
+        return 'AGENT';
+      default:
+        return '';
+    }
+  };
 
   return (
     <div
@@ -39,6 +66,14 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
           <span className="font-medium">
             {isUser ? "Tu" : "Asistent"}
           </span>
+          {messageMode && (
+            <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs ${
+              isUser ? "bg-purple-700" : "bg-purple-100 text-purple-700"
+            }`}>
+              {getModeIcon(messageMode)}
+              <span>{getModeLabel(messageMode)}</span>
+            </div>
+          )}
           <span className="text-xs opacity-70">{formattedTime}</span>
         </div>
 

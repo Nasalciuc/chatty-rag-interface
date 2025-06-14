@@ -32,4 +32,14 @@ export interface AdvancedMessageOptions {
   useCypher?: string;
   useParallelSearch?: boolean;
   includeThinking?: boolean;
+  mode?: ChatMode;
+}
+
+export type ChatMode = 'ask' | 'edit' | 'agent';
+
+export interface ChatModeConfig {
+  id: ChatMode;
+  label: string;
+  description: string;
+  icon: string;
 }
