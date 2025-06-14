@@ -1,22 +1,20 @@
 
 import os
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from functools import lru_cache
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from langchain.chat_models import ChatOpenAI
-from langchain.vectorstores import FAISS
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.chains import RetrievalQA
 from langchain.agents import initialize_agent, Tool
 from langchain.tools.tavily_search import TavilySearchResults
 from langchain.callbacks import get_openai_callback
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import SystemMessage
 from tenacity import retry, stop_after_attempt, wait_exponential
+from neo4j import GraphDatabase
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -27,7 +25,10 @@ load_dotenv()
 
 # Configuration
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
-MEDICAL_DB_PATH = os.getenv("MEDICAL_DB_PATH", "medical_index")
+NEO4J_URI = os.getenv("NEO4J_URI", "bolt://20.215.233.235:7687")
+NEO4J_USERNAME = os.getenv("NEO4J_USERNAME", "neo4j")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "shrink-report-mentor-amanda-harvard-9201")
+NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
 RAG_SEARCH_K = int(os.getenv("RAG_SEARCH_K", "4"))
 API_TIMEOUT = int(os.getenv("API_TIMEOUT", "60"))
 
@@ -47,23 +48,59 @@ class QuestionRequest(BaseModel):
 
 class AnswerResponse(BaseModel):
     answer: str
-    sources: list = ["RAG", "web"]
+    sources: list = ["Neo4j", "web"]
     token_usage: Optional[int] = None
 
 @lru_cache(maxsize=1)
-def get_medical_database():
-    """Loads and caches the medical database"""
+def get_neo4j_driver():
+    """Creates and caches the Neo4j driver"""
     try:
-        embeddings = OpenAIEmbeddings()
-        db = FAISS.load_local(MEDICAL_DB_PATH, embeddings, allow_dangerous_deserialization=True)
-        return db
+        driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
+        # Test connection
+        with driver.session(database=NEO4J_DATABASE) as session:
+            session.run("RETURN 1")
+        logger.info("Neo4j connection established successfully")
+        return driver
     except Exception as e:
-        logger.error(f"Failed to load medical database: {e}")
+        logger.error(f"Failed to connect to Neo4j: {e}")
         return None
+
+def search_drugs_neo4j(query: str) -> str:
+    """Search for drug information in Neo4j database"""
+    try:
+        driver = get_neo4j_driver()
+        if not driver:
+            return "Neo4j database not available"
+            
+        with driver.session(database=NEO4J_DATABASE) as session:
+            # Search for drugs by name or description
+            result = session.run(
+                """
+                MATCH (d:Drug) 
+                WHERE toLower(d.name) CONTAINS toLower($query) 
+                   OR toLower(d.description) CONTAINS toLower($query)
+                RETURN d.name as name, d.description as description
+                LIMIT $limit
+                """,
+                query=query, limit=RAG_SEARCH_K
+            )
+            
+            drugs = []
+            for record in result:
+                drugs.append(f"Medicament: {record['name']} - {record['description']}")
+            
+            if drugs:
+                return "Informații din baza de date medicală:\n" + "\n".join(drugs)
+            else:
+                return f"Nu s-au găsit informații în baza de date pentru: {query}"
+                
+    except Exception as e:
+        logger.error(f"Error searching Neo4j: {e}")
+        return f"Eroare la căutarea în baza de date: {str(e)}"
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def create_medical_assistant():
-    """Creates and returns a medical assistant agent with RAG and web search capabilities."""
+    """Creates and returns a medical assistant agent with Neo4j and web search capabilities."""
     
     try:
         # 1. Initialize LLM with proper error handling
@@ -74,27 +111,19 @@ def create_medical_assistant():
             streaming=False
         )
         
-        # 2. Setup RAG system with local medical database
-        medical_rag_tool = None
+        # 2. Setup Neo4j RAG tool
+        neo4j_rag_tool = None
         try:
-            db = get_medical_database()
-            if db:
-                retriever = db.as_retriever(search_kwargs={"k": RAG_SEARCH_K})
-                
-                rag_chain = RetrievalQA.from_chain_type(
-                    llm=llm,
-                    retriever=retriever,
-                    return_source_documents=True
-                )
-                
-                medical_rag_tool = Tool(
+            driver = get_neo4j_driver()
+            if driver:
+                neo4j_rag_tool = Tool(
                     name="MedicalKnowledgeBase",
-                    func=rag_chain.run,
+                    func=search_drugs_neo4j,
                     description="""Folosește pentru întrebări despre medicamente, contraindicații,
-                                   dozaje, interacțiuni medicamentoase și informații din baza de date medicală."""
+                                   dozaje, interacțiuni medicamentoase și informații din baza de date medicală Neo4j."""
                 )
         except Exception as e:
-            logger.error(f"Error loading medical database: {e}")
+            logger.error(f"Error setting up Neo4j tool: {e}")
         
         # 3. Setup web search tool with error handling
         web_search_tool = None
@@ -114,8 +143,8 @@ def create_medical_assistant():
         
         # 4. Create tools list
         tools = []
-        if medical_rag_tool:
-            tools.append(medical_rag_tool)
+        if neo4j_rag_tool:
+            tools.append(neo4j_rag_tool)
         if web_search_tool:
             tools.append(web_search_tool)
         
@@ -129,8 +158,8 @@ def create_medical_assistant():
         # 6. Create and return the agent with system message
         system_message = SystemMessage(content="""
         Ești un asistent medical AI care oferă informații precise și actualizate despre medicamente,
-        tratamente și ghiduri clinice. Folosește informațiile din baza de date medicală locală când sunt
-        disponibile și caută pe web pentru informații actualizate când este necesar. 
+        tratamente și ghiduri clinice. Folosești baza de date medicală Neo4j când sunt
+        disponibile informații și cauți pe web pentru informații actualizate când este necesar. 
         
         Respectă întotdeauna următoarele reguli:
         1. Nu oferi sfaturi medicale personalizate
@@ -212,13 +241,15 @@ medical_assistant = MedicalAssistant()
 
 @app.get("/")
 async def root():
-    return {"message": "Medical Assistant API is running"}
+    return {"message": "Medical Assistant API with Neo4j is running"}
 
 @app.get("/health")
 async def health_check():
+    neo4j_status = get_neo4j_driver() is not None
     return {
         "status": "healthy",
-        "assistant_ready": medical_assistant.is_ready()
+        "assistant_ready": medical_assistant.is_ready(),
+        "neo4j_connected": neo4j_status
     }
 
 @app.post("/ask", response_model=AnswerResponse)
@@ -232,7 +263,7 @@ async def ask_question(request: QuestionRequest):
         return AnswerResponse(
             answer=result["answer"],
             token_usage=result.get("token_usage", 0),
-            sources=["RAG", "web"] if medical_assistant.is_ready() else ["LLM"]
+            sources=["Neo4j", "web"] if medical_assistant.is_ready() else ["LLM"]
         )
     
     except Exception as e:
