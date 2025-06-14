@@ -23,7 +23,7 @@ const ChatHeader = ({ onClearHistory }: ChatHeaderProps) => {
           >
             Clear Chat
           </Button>
-          <div className="text-sm text-gray-500">Connected to Neo4j</div>
+          <div className="text-sm text-gray-500">LLM + Web Search Mode</div>
         </div>
       </div>
     </div>
