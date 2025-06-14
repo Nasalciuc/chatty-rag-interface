@@ -1,9 +1,11 @@
 
 import { useState, useRef, useEffect } from "react";
 import { toast } from "@/hooks/use-toast";
-import { Send, Paperclip, AlertCircle } from "lucide-react";
+import { Send, Paperclip, AlertCircle, Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import ChatMessage from "./ChatMessage";
 import ChatHeader from "./ChatHeader";
 import { Message } from "@/types/chat";
@@ -13,13 +15,14 @@ const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: "Bună! Sunt asistentul tău medical AI. Folosesc baza de date medicală locală (RAG) și căutare web pentru a răspunde la întrebările tale medicale. Pentru răspunsuri detaliate, asigură-te că întrebarea ta este clară și specifică. Informațiile oferite nu înlocuiesc consultul medical de specialitate.",
+      content: "Bună! Sunt asistentul tău medical AI cu funcționalitate de gândire avansată. Folosesc baza de date medicală locală (RAG) și căutare web pentru a răspunde la întrebările tale medicale. Poți activa opțiunea 'Arată gândirea' pentru a vedea cum analizez întrebările tale pas cu pas. Informațiile oferite nu înlocuiesc consultul medical de specialitate.",
       timestamp: new Date(),
     },
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<string>("checking");
+  const [showThinking, setShowThinking] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -63,7 +66,9 @@ const ChatInterface = () => {
     setIsLoading(true);
 
     try {
-      const data = await sendMessage(userMessage.content);
+      const data = await sendMessage(userMessage.content, {
+        includeThinking: showThinking
+      });
       
       const assistantMessage = {
         role: "assistant" as const,
@@ -71,7 +76,8 @@ const ChatInterface = () => {
         timestamp: new Date(),
         metadata: {
           sources: data.sources,
-          token_usage: data.token_usage
+          token_usage: data.token_usage,
+          thinking_process: data.thinking_process
         }
       };
 
@@ -122,9 +128,9 @@ const ChatInterface = () => {
   const getStatusMessage = () => {
     switch (connectionStatus) {
       case "connected":
-        return "RAG + Căutare Web Activ";
+        return "RAG + Căutare Web + Thinking Activ";
       case "limited":
-        return "Doar LLM + Căutare Web";
+        return "Doar LLM + Căutare Web + Thinking";
       case "disconnected":
         return "Deconectat";
       default:
@@ -183,6 +189,25 @@ const ChatInterface = () => {
       </div>
       
       <div className="border-t border-chat-border p-4 bg-white">
+        {/* Thinking Toggle */}
+        <div className="max-w-4xl mx-auto mb-3">
+          <div className="flex items-center space-x-2 text-sm text-gray-600">
+            <Brain className="h-4 w-4" />
+            <Label htmlFor="thinking-mode" className="cursor-pointer">
+              Arată gândirea AI-ului
+            </Label>
+            <Switch 
+              id="thinking-mode"
+              checked={showThinking} 
+              onCheckedChange={setShowThinking}
+              className="data-[state=checked]:bg-purple-600"
+            />
+            <span className="text-xs text-gray-500">
+              {showThinking ? "Activ - vei vedea procesul de gândire" : "Inactiv"}
+            </span>
+          </div>
+        </div>
+
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
           <div className="flex items-end gap-2 bg-gray-100 rounded-lg p-2">
             <Button

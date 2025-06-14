@@ -12,6 +12,14 @@ interface QuestionRequest {
   useNeo4j?: boolean;
   useCypher?: string;
   useParallelSearch?: boolean;
+  includeThinking?: boolean;
+}
+
+interface ThinkingStep {
+  type: 'reasoning' | 'action' | 'result' | 'conclusion';
+  content: string;
+  tool?: string;
+  timestamp: number;
 }
 
 interface AnswerResponse {
@@ -23,6 +31,7 @@ interface AnswerResponse {
     neo4j: any[];
     llm_web: string;
   };
+  thinking_process?: ThinkingStep[];
 }
 
 // Neo4j connection details
@@ -30,6 +39,52 @@ const NEO4J_URI = "bolt://20.215.233.235:7687";
 const NEO4J_USER = "neo4j";
 const NEO4J_PASSWORD = "shrink-report-mentor-amanda-harvard-9201";
 const NEO4J_DATABASE = "neo4j";
+
+class ThinkingTracker {
+  private steps: ThinkingStep[] = [];
+
+  addStep(type: ThinkingStep['type'], content: string, tool?: string) {
+    this.steps.push({
+      type,
+      content,
+      tool,
+      timestamp: Date.now()
+    });
+  }
+
+  getSteps(): ThinkingStep[] {
+    return this.steps;
+  }
+
+  getFormattedThinking(): string {
+    let formatted = "🧠 Procesul de gândire:\n\n";
+    
+    this.steps.forEach((step, index) => {
+      switch (step.type) {
+        case 'reasoning':
+          formatted += `${index + 1}. 🤔 Analizez: ${step.content}\n`;
+          break;
+        case 'action':
+          formatted += `${index + 1}. 🔍 Acțiune: ${step.content}`;
+          if (step.tool) formatted += ` (folosind ${step.tool})`;
+          formatted += "\n";
+          break;
+        case 'result':
+          formatted += `${index + 1}. 📊 Rezultat: ${step.content}\n`;
+          break;
+        case 'conclusion':
+          formatted += `${index + 1}. ✅ Concluzie: ${step.content}\n`;
+          break;
+      }
+    });
+
+    return formatted;
+  }
+
+  clear() {
+    this.steps = [];
+  }
+}
 
 async function connectToNeo4j() {
   try {
@@ -42,8 +97,12 @@ async function connectToNeo4j() {
   }
 }
 
-async function runCypherQuery(cypher: string): Promise<any[]> {
+async function runCypherQuery(cypher: string, thinking?: ThinkingTracker): Promise<any[]> {
   try {
+    if (thinking) {
+      thinking.addStep('action', `Rulând query Cypher: ${cypher}`, 'Neo4j');
+    }
+
     const neo4jUri = await connectToNeo4j();
     if (!neo4jUri) {
       throw new Error("Nu se poate conecta la Neo4j");
@@ -76,7 +135,7 @@ async function runCypherQuery(cypher: string): Promise<any[]> {
 
     // Extract results from Neo4j response format
     const results = data.results[0]?.data || [];
-    return results.map((row: any) => {
+    const formattedResults = results.map((row: any) => {
       const result: any = {};
       row.row.forEach((value: any, index: number) => {
         const column = data.results[0].columns[index];
@@ -85,20 +144,36 @@ async function runCypherQuery(cypher: string): Promise<any[]> {
       return result;
     });
 
+    if (thinking) {
+      thinking.addStep('result', `Am găsit ${formattedResults.length} rezultate în Neo4j`, 'Neo4j');
+    }
+
+    return formattedResults;
+
   } catch (error) {
     console.error('Cypher query error:', error);
+    if (thinking) {
+      thinking.addStep('result', `Eroare Neo4j: ${error.message}`, 'Neo4j');
+    }
     throw error;
   }
 }
 
-async function searchWebAdvanced(query: string): Promise<string> {
+async function searchWebAdvanced(query: string, thinking?: ThinkingTracker): Promise<string> {
   const tavilyApiKey = Deno.env.get('TAVILY_API_KEY');
   
   if (!tavilyApiKey) {
+    if (thinking) {
+      thinking.addStep('result', 'Căutarea web nu este disponibilă - lipsește cheia API Tavily', 'Web Search');
+    }
     return "Căutarea web nu este disponibilă - lipsește cheia API Tavily.";
   }
 
   try {
+    if (thinking) {
+      thinking.addStep('action', `Căutând pe web informații despre: ${query}`, 'Tavily Web Search');
+    }
+
     const response = await fetch('https://api.tavily.com/search', {
       method: 'POST',
       headers: {
@@ -123,6 +198,10 @@ async function searchWebAdvanced(query: string): Promise<string> {
     const data = await response.json();
     
     if (data.results && data.results.length > 0) {
+      if (thinking) {
+        thinking.addStep('result', `Am găsit ${data.results.length} rezultate relevante pe web`, 'Tavily Web Search');
+      }
+
       const results = data.results.map((result: any) => 
         `Sursă: ${result.title} (${result.url})\nConținut: ${result.content}\n`
       ).join('\n---\n');
@@ -132,50 +211,87 @@ async function searchWebAdvanced(query: string): Promise<string> {
       return `Informații de pe web:\n${results}${answer}`;
     }
     
+    if (thinking) {
+      thinking.addStep('result', 'Nu s-au găsit rezultate relevante pe web', 'Tavily Web Search');
+    }
     return "Nu s-au găsit rezultate relevante pe web.";
   } catch (error) {
     console.error('Advanced web search error:', error);
+    if (thinking) {
+      thinking.addStep('result', `Eroare la căutarea web: ${error.message}`, 'Tavily Web Search');
+    }
     return `Eroare la căutarea web: ${error.message}`;
   }
 }
 
-async function generateAutoCypherQuery(question: string): Promise<string> {
+async function generateAutoCypherQuery(question: string, thinking?: ThinkingTracker): Promise<string> {
+  if (thinking) {
+    thinking.addStep('reasoning', `Analizez întrebarea pentru a genera query Cypher automat: "${question}"`);
+  }
+
   // Generate a basic Cypher query based on the question
   const questionLower = question.toLowerCase();
+  let cypherQuery: string;
   
   if (questionLower.includes('medicament') || questionLower.includes('drug')) {
     const drugPattern = questionLower.match(/\b([a-zA-Z]+(?:mol|cin|lin|ina|an|ol))\b/);
     if (drugPattern) {
       const drugName = drugPattern[1];
-      return `MATCH (d:Drug) WHERE toLower(d.name) CONTAINS toLower('${drugName}') RETURN d.name, d.description, d.dosage, d.sideEffects LIMIT 5`;
+      cypherQuery = `MATCH (d:Drug) WHERE toLower(d.name) CONTAINS toLower('${drugName}') RETURN d.name, d.description, d.dosage, d.sideEffects LIMIT 5`;
+      if (thinking) {
+        thinking.addStep('reasoning', `Am identificat medicamentul "${drugName}" în întrebare`);
+      }
+    } else {
+      cypherQuery = `MATCH (d:Drug) RETURN d.name, d.description, d.dosage LIMIT 10`;
+      if (thinking) {
+        thinking.addStep('reasoning', 'Nu am identificat un medicament specific, voi căuta medicamente generale');
+      }
     }
-    return `MATCH (d:Drug) RETURN d.name, d.description, d.dosage LIMIT 10`;
+  } else if (questionLower.includes('interacțun') || questionLower.includes('interactiune')) {
+    cypherQuery = `MATCH (d1:Drug)-[r:INTERACTS_WITH]->(d2:Drug) RETURN d1.name, r.severity, d2.name LIMIT 10`;
+    if (thinking) {
+      thinking.addStep('reasoning', 'Întrebarea se referă la interacțiuni medicamentoase');
+    }
+  } else if (questionLower.includes('contraindicat') || questionLower.includes('contraindication')) {
+    cypherQuery = `MATCH (d:Drug)-[r:CONTRAINDICATED_IN]->(c:Condition) RETURN d.name, c.name, r.reason LIMIT 10`;
+    if (thinking) {
+      thinking.addStep('reasoning', 'Întrebarea se referă la contraindicații');
+    }
+  } else {
+    // Default query
+    cypherQuery = `MATCH (d:Drug) RETURN d.name, d.description LIMIT 5`;
+    if (thinking) {
+      thinking.addStep('reasoning', 'Folosesc query-ul default pentru medicamente generale');
+    }
   }
-  
-  if (questionLower.includes('interacțun') || questionLower.includes('interactiune')) {
-    return `MATCH (d1:Drug)-[r:INTERACTS_WITH]->(d2:Drug) RETURN d1.name, r.severity, d2.name LIMIT 10`;
+
+  if (thinking) {
+    thinking.addStep('action', `Query Cypher generat: ${cypherQuery}`);
   }
-  
-  if (questionLower.includes('contraindicat') || questionLower.includes('contraindication')) {
-    return `MATCH (d:Drug)-[r:CONTRAINDICATED_IN]->(c:Condition) RETURN d.name, c.name, r.reason LIMIT 10`;
-  }
-  
-  // Default query
-  return `MATCH (d:Drug) RETURN d.name, d.description LIMIT 5`;
+
+  return cypherQuery;
 }
 
-async function askAdvancedMedicalAI(question: string, webContext: string, neo4jContext?: any[]): Promise<AnswerResponse> {
+async function askAdvancedMedicalAI(question: string, webContext: string, neo4jContext?: any[], thinking?: ThinkingTracker): Promise<AnswerResponse> {
   const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
   
   if (!openaiApiKey) {
+    if (thinking) {
+      thinking.addStep('result', 'Serviciul nu este disponibil - lipsește cheia API OpenAI');
+    }
     return {
       answer: "Serviciul nu este disponibil - lipsește cheia API OpenAI.",
       sources: [],
-      token_usage: 0
+      token_usage: 0,
+      thinking_process: thinking?.getSteps()
     };
   }
 
   try {
+    if (thinking) {
+      thinking.addStep('reasoning', 'Pregătesc contextul pentru AI cu informațiile găsite');
+    }
+
     let contextMessage = `Context din căutarea web:\n${webContext}\n\n`;
     
     if (neo4jContext && neo4jContext.length > 0) {
@@ -183,6 +299,10 @@ async function askAdvancedMedicalAI(question: string, webContext: string, neo4jC
         Object.entries(item).map(([key, value]) => `${key}: ${value}`).join(', ')
       ).join('\n');
       contextMessage += `Context din baza de date medicală (Neo4j):\n${neo4jText}\n\n`;
+      
+      if (thinking) {
+        thinking.addStep('reasoning', `Am combinat informațiile: ${neo4jContext.length} rezultate Neo4j + informații web`);
+      }
     }
 
     const systemPrompt = `
@@ -201,6 +321,10 @@ Respectă întotdeauna următoarele reguli:
 
 ${contextMessage}
 `;
+
+    if (thinking) {
+      thinking.addStep('action', 'Trimit întrebarea către OpenAI pentru analiză finală', 'OpenAI GPT');
+    }
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -232,42 +356,64 @@ ${contextMessage}
       sources.push("Neo4j Medical Database");
     }
 
+    if (thinking) {
+      thinking.addStep('conclusion', `Am generat răspunsul final folosind ${tokenUsage} token-uri OpenAI`);
+    }
+
     return {
       answer: answer,
       sources: sources,
       token_usage: tokenUsage,
-      neo4j_results: neo4jContext
+      neo4j_results: neo4jContext,
+      thinking_process: thinking?.getSteps()
     };
 
   } catch (error) {
     console.error('Advanced Medical AI error:', error);
+    if (thinking) {
+      thinking.addStep('result', `Eroare AI: ${error.message}`);
+    }
     return {
       answer: `Îmi pare rău, am întâmpinat o eroare: ${error.message}. Te rog să încerci din nou mai târziu.`,
       sources: [],
-      token_usage: 0
+      token_usage: 0,
+      thinking_process: thinking?.getSteps()
     };
   }
 }
 
-async function performParallelSearch(question: string, customCypher?: string): Promise<any> {
+async function performParallelSearch(question: string, customCypher?: string, includeThinking?: boolean): Promise<any> {
+  const thinking = includeThinking ? new ThinkingTracker() : undefined;
+
   try {
+    if (thinking) {
+      thinking.addStep('reasoning', `Încep căutarea paralelă pentru întrebarea: "${question}"`);
+      thinking.addStep('action', 'Execut în paralel: căutare Neo4j + căutare web');
+    }
+
     // Generate Cypher query if not provided
-    const cypherQuery = customCypher || await generateAutoCypherQuery(question);
+    const cypherQuery = customCypher || await generateAutoCypherQuery(question, thinking);
     
     // Run both searches in parallel
     const [neo4jResults, webContext] = await Promise.all([
-      runCypherQuery(cypherQuery).catch(err => {
+      runCypherQuery(cypherQuery, thinking).catch(err => {
         console.error('Neo4j parallel search error:', err);
+        if (thinking) {
+          thinking.addStep('result', `Neo4j a eșuat: ${err.message}`, 'Neo4j');
+        }
         return [];
       }),
-      searchWebAdvanced(question).catch(err => {
+      searchWebAdvanced(question, thinking).catch(err => {
         console.error('Web parallel search error:', err);
+        if (thinking) {
+          thinking.addStep('result', `Căutarea web a eșuat: ${err.message}`, 'Web Search');
+        }
         return "Căutarea web a eșuat.";
       })
     ]);
 
     // Generate AI response with both contexts
-    const aiResponse = await askAdvancedMedicalAI(question, webContext, neo4jResults);
+    const aiResponse = await askAdvancedMedicalAI(question, webContext, neo4jResults, thinking);
 
     return {
       answer: aiResponse.answer,
@@ -276,11 +422,15 @@ async function performParallelSearch(question: string, customCypher?: string): P
       parallel_results: {
         neo4j: neo4jResults,
         llm_web: aiResponse.answer
-      }
+      },
+      thinking_process: thinking?.getSteps()
     };
 
   } catch (error) {
     console.error('Parallel search error:', error);
+    if (thinking) {
+      thinking.addStep('result', `Eroare în căutarea paralelă: ${error.message}`);
+    }
     throw error;
   }
 }
@@ -305,7 +455,8 @@ serve(async (req) => {
           status: "healthy",
           assistant_ready: true,
           neo4j_connected: true,
-          advanced_features: true
+          advanced_features: true,
+          thinking_enabled: true
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -315,6 +466,7 @@ serve(async (req) => {
           assistant_ready: true,
           neo4j_connected: false,
           advanced_features: false,
+          thinking_enabled: true,
           error: "Neo4j connection failed"
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -341,7 +493,7 @@ serve(async (req) => {
         });
       }
 
-      const { cypher } = requestData;
+      const { cypher, includeThinking } = requestData;
       
       if (!cypher) {
         return new Response(JSON.stringify({
@@ -353,10 +505,12 @@ serve(async (req) => {
       }
 
       try {
-        const results = await runCypherQuery(cypher);
+        const thinking = includeThinking ? new ThinkingTracker() : undefined;
+        const results = await runCypherQuery(cypher, thinking);
         return new Response(JSON.stringify({
           results: results,
-          count: results.length
+          count: results.length,
+          thinking_process: thinking?.getSteps()
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -393,7 +547,7 @@ serve(async (req) => {
         });
       }
       
-      const { question, useNeo4j, useCypher, useParallelSearch } = requestData;
+      const { question, useNeo4j, useCypher, useParallelSearch, includeThinking } = requestData;
       
       if (!question || question.trim().length < 3) {
         return new Response(JSON.stringify({
@@ -409,18 +563,20 @@ serve(async (req) => {
       try {
         // Handle different types of requests
         if (useParallelSearch) {
-          console.log('Performing parallel search...');
-          result = await performParallelSearch(question, useCypher);
+          console.log('Performing parallel search with thinking:', includeThinking);
+          result = await performParallelSearch(question, useCypher, includeThinking);
         } else if (useNeo4j || useCypher) {
-          console.log('Performing Neo4j search...');
-          const cypherQuery = useCypher || await generateAutoCypherQuery(question);
-          const neo4jResults = await runCypherQuery(cypherQuery);
-          const webContext = await searchWebAdvanced(question);
-          result = await askAdvancedMedicalAI(question, webContext, neo4jResults);
+          console.log('Performing Neo4j search with thinking:', includeThinking);
+          const thinking = includeThinking ? new ThinkingTracker() : undefined;
+          const cypherQuery = useCypher || await generateAutoCypherQuery(question, thinking);
+          const neo4jResults = await runCypherQuery(cypherQuery, thinking);
+          const webContext = await searchWebAdvanced(question, thinking);
+          result = await askAdvancedMedicalAI(question, webContext, neo4jResults, thinking);
         } else {
-          console.log('Performing standard search...');
-          const webContext = await searchWebAdvanced(question);
-          result = await askAdvancedMedicalAI(question, webContext);
+          console.log('Performing standard search with thinking:', includeThinking);
+          const thinking = includeThinking ? new ThinkingTracker() : undefined;
+          const webContext = await searchWebAdvanced(question, thinking);
+          result = await askAdvancedMedicalAI(question, webContext, undefined, thinking);
         }
         
         return new Response(JSON.stringify(result), {
@@ -439,18 +595,20 @@ serve(async (req) => {
 
     // Default response
     return new Response(JSON.stringify({
-      message: "Advanced Medical Assistant API cu Supabase Edge Functions",
+      message: "Advanced Medical Assistant API cu Supabase Edge Functions + Thinking Process",
       endpoints: {
-        "/health": "GET - Status check cu Neo4j",
-        "/": "POST - Întrebări medicale avansate",
-        "/cypher": "POST - Query-uri Cypher directe"
+        "/health": "GET - Status check cu Neo4j + Thinking",
+        "/": "POST - Întrebări medicale avansate cu thinking",
+        "/cypher": "POST - Query-uri Cypher directe cu thinking"
       },
       features: [
         "Neo4j Medical Database Integration",
         "Parallel Search (Neo4j + Web)",
         "Advanced Web Search cu domenii medicale",
         "RAG cu context îmbunătățit",
-        "Auto-generated Cypher queries"
+        "Auto-generated Cypher queries",
+        "🧠 Thinking Process Tracking",
+        "Step-by-step reasoning visualization"
       ]
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

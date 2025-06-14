@@ -1,4 +1,11 @@
 
+export interface ThinkingStep {
+  type: 'reasoning' | 'action' | 'result' | 'conclusion';
+  content: string;
+  tool?: string;
+  timestamp: number;
+}
+
 export interface Message {
   role: "user" | "assistant" | "system";
   content: string;
@@ -12,6 +19,7 @@ export interface Message {
       llm_web: string;
     };
     search_type?: 'standard' | 'neo4j' | 'parallel';
+    thinking_process?: ThinkingStep[];
   };
 }
 
@@ -23,4 +31,5 @@ export interface AdvancedMessageOptions {
   useNeo4j?: boolean;
   useCypher?: string;
   useParallelSearch?: boolean;
+  includeThinking?: boolean;
 }

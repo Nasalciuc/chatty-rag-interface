@@ -2,7 +2,8 @@
 import { useState } from "react";
 import { Message } from "@/types/chat";
 import { Button } from "@/components/ui/button";
-import { Info } from "lucide-react";
+import { Info, Brain, ChevronDown, ChevronUp } from "lucide-react";
+import { formatThinkingProcess } from "@/services/chatService";
 
 interface ChatMessageProps {
   message: Message;
@@ -10,6 +11,7 @@ interface ChatMessageProps {
 
 const ChatMessage = ({ message }: ChatMessageProps) => {
   const [showMetadata, setShowMetadata] = useState(false);
+  const [showThinking, setShowThinking] = useState(false);
 
   const formattedTime = new Intl.DateTimeFormat("ro-RO", {
     hour: "numeric",
@@ -18,6 +20,7 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
 
   const isUser = message.role === "user";
   const hasMetadata = message.metadata && (message.metadata.sources || message.metadata.token_usage);
+  const hasThinking = message.metadata?.thinking_process && message.metadata.thinking_process.length > 0;
 
   return (
     <div
@@ -41,6 +44,33 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
 
         <div className="whitespace-pre-wrap">{message.content}</div>
 
+        {/* Thinking Process Section */}
+        {hasThinking && (
+          <div className="mt-3 text-sm border-t border-gray-300 pt-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              className={`flex items-center gap-1 p-1 ${
+                isUser ? "text-white" : "text-purple-600"
+              }`}
+              onClick={() => setShowThinking(!showThinking)}
+            >
+              <Brain className="h-4 w-4" />
+              <span>Procesul de gândire</span>
+              {showThinking ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            </Button>
+
+            {showThinking && (
+              <div className={`mt-2 p-3 rounded text-xs ${isUser ? "bg-purple-700" : "bg-purple-50 text-gray-700"}`}>
+                <div className="whitespace-pre-wrap">
+                  {formatThinkingProcess(message.metadata.thinking_process)}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Metadata Section */}
         {hasMetadata && (
           <div className="mt-3 text-sm">
             <Button
@@ -60,7 +90,7 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
                 {message.metadata.sources && (
                   <div className="mb-2">
                     <p className="font-medium mb-1">Surse:</p>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       {message.metadata.sources.map((source, index) => (
                         <span key={index} className="text-xs px-2 py-1 bg-gray-600 text-white rounded">
                           {source}
