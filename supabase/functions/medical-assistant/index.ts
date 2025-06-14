@@ -295,7 +295,7 @@ serve(async (req) => {
     const url = new URL(req.url);
     
     // Health check endpoint
-    if (url.pathname === '/health' && req.method === 'GET') {
+    if (url.pathname.endsWith('/health') && req.method === 'GET') {
       try {
         // Test Neo4j connection
         const testCypher = "MATCH (n) RETURN count(n) as nodeCount LIMIT 1";
@@ -322,46 +322,26 @@ serve(async (req) => {
       }
     }
 
-    // Main question endpoint with advanced features
-    if (req.method === 'POST') {
-      const requestData = await req.json() as QuestionRequest;
-      const { question, useNeo4j, useCypher, useParallelSearch } = requestData;
-      
-      if (!question || question.trim().length < 3) {
+    // Cypher query endpoint
+    if (url.pathname.endsWith('/cypher') && req.method === 'POST') {
+      let requestData;
+      try {
+        const body = await req.text();
+        if (!body || body.trim() === '') {
+          throw new Error('Request body is empty');
+        }
+        requestData = JSON.parse(body);
+      } catch (parseError) {
+        console.error('JSON parse error for cypher endpoint:', parseError);
         return new Response(JSON.stringify({
-          error: "Întrebarea este prea scurtă. Te rog să oferi o întrebare medicală detaliată."
+          error: "Invalid JSON în request body"
         }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
-      let result: AnswerResponse;
-
-      // Handle different types of requests
-      if (useParallelSearch) {
-        console.log('Performing parallel search...');
-        result = await performParallelSearch(question, useCypher);
-      } else if (useNeo4j || useCypher) {
-        console.log('Performing Neo4j search...');
-        const cypherQuery = useCypher || await generateAutoCypherQuery(question);
-        const neo4jResults = await runCypherQuery(cypherQuery);
-        const webContext = await searchWebAdvanced(question);
-        result = await askAdvancedMedicalAI(question, webContext, neo4jResults);
-      } else {
-        console.log('Performing standard search...');
-        const webContext = await searchWebAdvanced(question);
-        result = await askAdvancedMedicalAI(question, webContext);
-      }
-      
-      return new Response(JSON.stringify(result), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Cypher query endpoint
-    if (url.pathname === '/cypher' && req.method === 'POST') {
-      const { cypher } = await req.json();
+      const { cypher } = requestData;
       
       if (!cypher) {
         return new Response(JSON.stringify({
@@ -383,6 +363,73 @@ serve(async (req) => {
       } catch (error) {
         return new Response(JSON.stringify({
           error: `Eroare Cypher: ${error.message}`
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // Main question endpoint with advanced features
+    if (req.method === 'POST') {
+      let requestData: QuestionRequest;
+      try {
+        const body = await req.text();
+        console.log('Received request body:', body);
+        
+        if (!body || body.trim() === '') {
+          throw new Error('Request body is empty');
+        }
+        
+        requestData = JSON.parse(body);
+        console.log('Parsed request data:', requestData);
+      } catch (parseError) {
+        console.error('JSON parse error:', parseError);
+        return new Response(JSON.stringify({
+          error: "Invalid JSON în request body. Verifică formatul request-ului."
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      const { question, useNeo4j, useCypher, useParallelSearch } = requestData;
+      
+      if (!question || question.trim().length < 3) {
+        return new Response(JSON.stringify({
+          error: "Întrebarea este prea scurtă. Te rog să oferi o întrebare medicală detaliată."
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      let result: AnswerResponse;
+
+      try {
+        // Handle different types of requests
+        if (useParallelSearch) {
+          console.log('Performing parallel search...');
+          result = await performParallelSearch(question, useCypher);
+        } else if (useNeo4j || useCypher) {
+          console.log('Performing Neo4j search...');
+          const cypherQuery = useCypher || await generateAutoCypherQuery(question);
+          const neo4jResults = await runCypherQuery(cypherQuery);
+          const webContext = await searchWebAdvanced(question);
+          result = await askAdvancedMedicalAI(question, webContext, neo4jResults);
+        } else {
+          console.log('Performing standard search...');
+          const webContext = await searchWebAdvanced(question);
+          result = await askAdvancedMedicalAI(question, webContext);
+        }
+        
+        return new Response(JSON.stringify(result), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (processingError) {
+        console.error('Processing error:', processingError);
+        return new Response(JSON.stringify({
+          error: `Eroare în procesarea întrebării: ${processingError.message}`
         }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
