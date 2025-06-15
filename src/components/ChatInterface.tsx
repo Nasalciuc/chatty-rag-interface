@@ -1,3 +1,4 @@
+
 import { useState, useRef, useEffect } from "react";
 import { toast } from "@/hooks/use-toast";
 import { Send, Paperclip, AlertCircle, Brain } from "lucide-react";
@@ -7,15 +8,14 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import ChatMessage from "./ChatMessage";
 import ChatHeader from "./ChatHeader";
-import ChatModeSelector from "./ChatModeSelector";
-import { Message, ChatMode } from "@/types/chat";
-import { sendMessageWithMode, testConnection } from "@/services/chatService";
+import { Message } from "@/types/chat";
+import { sendMessage, testConnection } from "@/services/chatService";
 
 const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: "Bună! Sunt asistentul tău medical AI cu trei moduri de funcționare:\n\n• **Ask** - pentru întrebări directe despre medicină\n• **Edit** - pentru îmbunătățirea și editarea informațiilor medicale\n• **Agent** - pentru analiză medicală avansată cu gândire detaliată\n\nAlege modul dorit și pune-mi întrebarea ta medicală!",
+      content: "Bună! Sunt asistentul tău medical AI cu funcționalitate de gândire avansată. Folosesc baza de date medicală locală (RAG) și căutare web pentru a răspunde la întrebările tale medicale. Poți activa opțiunea 'Arată gândirea' pentru a vedea cum analizez întrebările tale pas cu pas. Informațiile oferite nu înlocuiesc consultul medical de specialitate.",
       timestamp: new Date(),
     },
   ]);
@@ -23,7 +23,6 @@ const ChatInterface = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<string>("checking");
   const [showThinking, setShowThinking] = useState(false);
-  const [selectedMode, setSelectedMode] = useState<ChatMode>('ask');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -60,9 +59,6 @@ const ChatInterface = () => {
       role: "user" as const,
       content: input.trim(),
       timestamp: new Date(),
-      metadata: {
-        mode: selectedMode
-      }
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -70,7 +66,7 @@ const ChatInterface = () => {
     setIsLoading(true);
 
     try {
-      const data = await sendMessageWithMode(userMessage.content, selectedMode, {
+      const data = await sendMessage(userMessage.content, {
         includeThinking: showThinking
       });
       
@@ -81,8 +77,7 @@ const ChatInterface = () => {
         metadata: {
           sources: data.sources,
           token_usage: data.token_usage,
-          thinking_process: data.thinking_process,
-          mode: selectedMode
+          thinking_process: data.thinking_process
         }
       };
 
@@ -130,16 +125,6 @@ const ChatInterface = () => {
     });
   };
 
-  const getModeStatusMessage = () => {
-    const modeDescriptions = {
-      ask: "ASK - Întrebări directe medicale",
-      edit: "EDIT - Editare și îmbunătățire informații",
-      agent: "AGENT - Analiză medicală avansată"
-    };
-    
-    return `${getStatusMessage()} | ${modeDescriptions[selectedMode]}`;
-  };
-
   const getStatusMessage = () => {
     switch (connectionStatus) {
       case "connected":
@@ -168,7 +153,7 @@ const ChatInterface = () => {
 
   return (
     <div className="flex flex-col h-screen bg-chat-bg">
-      <ChatHeader onClearHistory={handleClearHistory} status={getModeStatusMessage()} />
+      <ChatHeader onClearHistory={handleClearHistory} status={getStatusMessage()} />
       
       {/* Status Banner */}
       <div className={`${connectionStatus === 'disconnected' ? 'bg-red-50 border-red-400' : connectionStatus === 'limited' ? 'bg-yellow-50 border-yellow-400' : 'bg-green-50 border-green-400'} border-l-4 p-4 mx-4 mt-2 rounded-r-lg`}>
@@ -204,14 +189,8 @@ const ChatInterface = () => {
       </div>
       
       <div className="border-t border-chat-border p-4 bg-white">
-        <div className="max-w-4xl mx-auto space-y-3">
-          {/* Chat Mode Selector */}
-          <ChatModeSelector 
-            selectedMode={selectedMode}
-            onModeChange={setSelectedMode}
-          />
-
-          {/* Thinking Toggle */}
+        {/* Thinking Toggle */}
+        <div className="max-w-4xl mx-auto mb-3">
           <div className="flex items-center space-x-2 text-sm text-gray-600">
             <Brain className="h-4 w-4" />
             <Label htmlFor="thinking-mode" className="cursor-pointer">
@@ -227,39 +206,39 @@ const ChatInterface = () => {
               {showThinking ? "Activ - vei vedea procesul de gândire" : "Inactiv"}
             </span>
           </div>
-
-          <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
-            <div className="flex items-end gap-2 bg-gray-100 rounded-lg p-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <Paperclip className="h-5 w-5" />
-              </Button>
-              <Textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Întreabă despre medicamente, tratamente sau informații medicale..."
-                className="min-h-12 flex-grow resize-none border-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
-                rows={1}
-              />
-              <Button
-                type="submit"
-                size="icon"
-                className={`rounded-full bg-chat-highlight hover:bg-purple-700 ${
-                  !input.trim() || isLoading ? "opacity-50 cursor-not-allowed" : ""
-                }`}
-                disabled={!input.trim() || isLoading}
-              >
-                <Send className="h-4 w-4" />
-              </Button>
-            </div>
-          </form>
         </div>
+
+        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
+          <div className="flex items-end gap-2 bg-gray-100 rounded-lg p-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <Paperclip className="h-5 w-5" />
+            </Button>
+            <Textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Întreabă despre medicamente, tratamente sau informații medicale..."
+              className="min-h-12 flex-grow resize-none border-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+              rows={1}
+            />
+            <Button
+              type="submit"
+              size="icon"
+              className={`rounded-full bg-chat-highlight hover:bg-purple-700 ${
+                !input.trim() || isLoading ? "opacity-50 cursor-not-allowed" : ""
+              }`}
+              disabled={!input.trim() || isLoading}
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        </form>
       </div>
     </div>
   );

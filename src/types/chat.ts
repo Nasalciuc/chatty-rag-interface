@@ -1,13 +1,10 @@
 
-
 export interface ThinkingStep {
   type: 'reasoning' | 'action' | 'result' | 'conclusion';
   content: string;
   tool?: string;
   timestamp: number;
 }
-
-export type ChatMode = 'ask' | 'edit' | 'agent';
 
 export interface Message {
   role: "user" | "assistant" | "system";
@@ -23,7 +20,6 @@ export interface Message {
     };
     search_type?: 'standard' | 'neo4j' | 'parallel';
     thinking_process?: ThinkingStep[];
-    mode?: ChatMode;
   };
 }
 
@@ -36,14 +32,4 @@ export interface AdvancedMessageOptions {
   useCypher?: string;
   useParallelSearch?: boolean;
   includeThinking?: boolean;
-  mode?: ChatMode;
-  systemPrompt?: string;
 }
-
-export interface ChatModeConfig {
-  id: ChatMode;
-  label: string;
-  description: string;
-  icon: string;
-}
-
