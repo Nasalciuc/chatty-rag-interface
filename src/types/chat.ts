@@ -1,4 +1,5 @@
 
+
 export interface ThinkingStep {
   type: 'reasoning' | 'action' | 'result' | 'conclusion';
   content: string;
@@ -45,3 +46,4 @@ export interface ChatModeConfig {
   description: string;
   icon: string;
 }
+
